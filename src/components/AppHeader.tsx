@@ -1,4 +1,4 @@
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 import { RefObject } from 'react';
 import styles from '../App.module.css';
 
@@ -56,25 +56,36 @@ export function AppHeader({
 
         <div className={styles.appHeaderRight}>
           <div className={styles.profileWrapper} ref={profileMenuRef}>
-            <button
-              onClick={onToggleProfileMenu}
-              className={styles.profileButton}
-              aria-haspopup="menu"
-              aria-expanded={isProfileMenuOpen}
-              style={
-                avatarUrl
-                  ? { backgroundImage: `url(${avatarUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-                  : undefined
-              }
-            >
-              {!avatarUrl && (
-                <span className={styles.profileInitial}>
-                  {userInitial}
-                </span>
-              )}
-            </button>
+            {/* 썸네일: 메뉴가 열려있지 않을 때만 표시 */}
+            {!isProfileMenuOpen && (
+              <button
+                onClick={onToggleProfileMenu}
+                className={styles.profileButton}
+                aria-haspopup="menu"
+                aria-expanded={isProfileMenuOpen}
+                style={
+                  avatarUrl
+                    ? { backgroundImage: `url(${avatarUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                    : undefined
+                }
+              >
+                {!avatarUrl && (
+                  <span className={styles.profileInitial}>
+                    {userInitial}
+                  </span>
+                )}
+              </button>
+            )}
             {isProfileMenuOpen && (
               <div className={styles.profileMenu} role="menu">
+                {/* 헤더 (제목 + 닫기 버튼) */}
+                <div className={styles.profileHeader}>
+                  <span className={styles.profileTitle}>계정</span>
+                  <button onClick={onToggleProfileMenu} className={styles.profileCloseButton}>
+                    <X size={18} />
+                  </button>
+                </div>
+
                 {/* 루틴 관리 */}
                 <div className={styles.profileMenuItemGroup}>
                   <div className={styles.profileMenuToggleWrapper}>
