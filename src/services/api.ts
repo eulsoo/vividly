@@ -18,14 +18,17 @@ export interface CalendarMetadata {
   isVisible?: boolean;
 }
 
+// CalDAV 메타데이터 저장 (로컬 캘린더 제외)
 export const saveCalendarMetadata = (metadata: CalendarMetadata[]) => {
   if (typeof window === 'undefined') return;
   try {
-    const map = metadata.reduce((acc, item) => {
-      const normalizedUrl = normalizeCalendarUrl(item.url)!;
-      acc[normalizedUrl] = { ...item, url: normalizedUrl };
-      return acc;
-    }, {} as Record<string, CalendarMetadata>);
+    const map = metadata
+      .filter(m => !m.isLocal) // 로컬 제외하고 저장
+      .reduce((acc, item) => {
+        const normalizedUrl = normalizeCalendarUrl(item.url)!;
+        acc[normalizedUrl] = { ...item, url: normalizedUrl };
+        return acc;
+      }, {} as Record<string, CalendarMetadata>);
     window.localStorage.setItem(CALENDAR_METADATA_KEY, JSON.stringify(map));
   } catch (error) {
     console.error('Error saving calendar metadata:', error);

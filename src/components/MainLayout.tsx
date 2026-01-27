@@ -6,8 +6,9 @@ import { CalendarList } from './CalendarList';
 import { CalendarListPopup, CalendarToggleButton } from './CalendarListPopup';
 import { useData } from '../contexts/DataContext';
 import { useSelection } from '../contexts/SelectionContext';
+import { useCalendarMetadata } from '../hooks/useCalendarMetadata';
 import { WeekOrder, Event, DiaryEntry, Todo } from '../types';
-import { getCalendarMetadata, saveCalendarMetadata, normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry } from '../services/api';
+import { normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry } from '../services/api';
 import { getWeekStartForDate, getTodoWeekStart, formatLocalDate } from '../utils/dateUtils';
 import styles from '../App.module.css';
 
@@ -38,17 +39,26 @@ export const MainLayout = ({
 }: MainLayoutProps) => {
   const {
     events, routines, routineCompletions, todos, dayDefinitions, diaryEntries,
-    addEvent, updateEvent, deleteEvent, deleteEvents,
+    addEvent, updateEvent, deleteEvent,
     addRoutine, deleteRoutine,
+    addTodo, toggleTodo, updateTodo, deleteTodo,
+    saveDayDefinition, deleteDayDefinition,
     fetchDiary, saveDiary, deleteDiary,
   } = useData();
 
-  const { selectedEventIds, setSelectedIds, removeIdFromSelection } = useSelection();
+  const { selectedEventIds, setSelectedIds, removeIdFromSelection, clearSelection } = useSelection();
+  const {
+    calendarMetadata,
+    visibleCalendarUrlSet,
+    setVisibleCalendarUrlSet,
+    toggleCalendarVisibility,
+    addLocalCalendar,
+    updateLocalCalendar,
+    deleteLocalCalendar
+  } = useCalendarMetadata();
 
   // --- UI States ---
   const [isCalendarPopupOpen, setIsCalendarPopupOpen] = useState(false);
-  const [visibleCalendarUrlSet, setVisibleCalendarUrlSet] = useState<Set<string>>(new Set());
-  const [calendarMetadata, setCalendarMetadata] = useState<CalendarMetadata[]>([]);
 
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
@@ -63,7 +73,7 @@ export const MainLayout = ({
   const [isDiaryModalOpen, setIsDiaryModalOpen] = useState(false);
   const [activeDiaryDate, setActiveDiaryDate] = useState<string | null>(null);
 
-  const [popupPosition, setPopupPosition] = useState<{ top: number; left: number; width: number } | undefined>(undefined);
+  const [popupPosition, setPopupPosition] = useState<{ anchorId: string; align: 'left' | 'right' } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [showRoutines, setShowRoutines] = useState(true);
@@ -91,27 +101,30 @@ export const MainLayout = ({
     supabase.auth.signOut();
   }, []);
 
-  // --- Initial Load Metadata ---
-  useEffect(() => {
-    const metaMap = getCalendarMetadata();
-    const metaList = Object.values(metaMap);
-    setCalendarMetadata(metaList);
+  // Note: Initial load is now handled by useCalendarMetadata hook
 
-    // Explicit typing/filtering to avoid undefined in map
-    const visible = new Set(
-      metaList
-        .filter(c => c.isVisible !== false)
-        .map(c => normalizeCalendarUrl(c.url))
-        .filter((url): url is string => !!url)
-    );
-    // Default local calendar
-    if (!visible.has('local')) visible.add('local');
-    setVisibleCalendarUrlSet(visible);
-  }, []);
+  // --- Keyboard Selection Delete ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // 입력 필드 포커스 시 무시
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedEventIds.length > 0) {
+        e.preventDefault(); // 백스페이스로 페이지 뒤로가기 방지
+        selectedEventIds.forEach(id => deleteEvent(id));
+        clearSelection();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedEventIds, deleteEvent, clearSelection]);
+
 
   // --- Data Processing (Weeks, Events By Week) ---
+  // --- Data Processing (Weeks, Events By Week) ---
   const filteredEvents = useMemo(() => {
-    return events.filter(e => {
+    const list = events.filter(e => {
       if (selectedEvent && e.id === selectedEvent.id) return true;
 
       // Handle local events (no calendarUrl)
@@ -120,7 +133,24 @@ export const MainLayout = ({
       // Check visibility
       return visibleCalendarUrlSet.has(normalizeCalendarUrl(e.calendarUrl));
     });
-  }, [events, visibleCalendarUrlSet, selectedEvent]);
+
+    // Draft Event Injection
+    if (draftEvent && draftEvent.date) {
+      const temp: Event = {
+        id: 'draft-preview',
+        date: draftEvent.date,
+        title: draftEvent.title || '새로운 일정',
+        startTime: draftEvent.startTime,
+        endTime: draftEvent.endTime,
+        color: draftEvent.color || '#B3E5FC',
+        calendarUrl: draftEvent.calendarUrl || 'local',
+        isLocal: true, // Ensure it's treated as local
+        // Add other required fields if necessary via spreading partial, or casting
+      } as Event;
+      return [...list, temp];
+    }
+    return list;
+  }, [events, visibleCalendarUrlSet, selectedEvent, draftEvent]);
 
   // Use Memo for map creation
   const eventsByWeek = useMemo(() => {
@@ -236,19 +266,33 @@ export const MainLayout = ({
 
   // --- Handlers ---
   const handleDateClick = useCallback((date: string, anchorEl?: HTMLElement) => {
-    setDraftEvent({ date, title: '', start: '09:00', end: '10:00', color: '#B3E5FC' });
+    setDraftEvent({ date, title: '', startTime: '09:00', endTime: '10:00', color: '#B3E5FC' });
+    setSelectedEvent(null);
     setSelectedDate(date);
-    if (anchorEl) {
+    setIsEventModalOpen(true);
+    setModalSessionId(prev => prev + 1);
+    if (anchorEl && anchorEl.id) {
       const rect = anchorEl.getBoundingClientRect();
-      // Popup position typing fix if needed, assuming {top,left,width} is correct
-      setPopupPosition({ top: rect.bottom + window.scrollY, left: rect.left + window.scrollX, width: rect.width });
+      const isRightHalf = rect.left > window.innerWidth / 2;
+      setPopupPosition({ anchorId: anchorEl.id, align: isRightHalf ? 'right' : 'left' });
+    } else {
+      setPopupPosition(null);
     }
   }, []);
 
   const handleEventDoubleClick = useCallback((event: Event, anchorEl?: HTMLElement) => {
     setSelectedEvent(event);
+    setSelectedDate(event.date);
     setIsEventModalOpen(true);
     setModalSessionId(prev => prev + 1);
+
+    if (anchorEl && anchorEl.id) {
+      const rect = anchorEl.getBoundingClientRect();
+      const isRightHalf = rect.left > window.innerWidth / 2;
+      setPopupPosition({ anchorId: anchorEl.id, align: isRightHalf ? 'right' : 'left' });
+    } else {
+      setPopupPosition(null);
+    }
   }, []);
 
   const handleAddEventWrapper = useCallback(async (event: Omit<Event, 'id'>, keepOpen?: boolean) => {
@@ -305,14 +349,9 @@ export const MainLayout = ({
     setActiveDiaryDate(null);
   }, [deleteDiary]);
 
-  const handleToggleCalendarVisibility = (url: string) => {
-    setVisibleCalendarUrlSet(prev => {
-      const next = new Set(prev);
-      if (next.has(url)) next.delete(url);
-      else next.add(url);
-      return next;
-    });
-  };
+  const handleDraftUpdateWrapper = useCallback((updates: Partial<Event>) => {
+    setDraftEvent(prev => prev ? { ...prev, ...updates } : updates);
+  }, []);
 
   const activeDiaryEntry = activeDiaryDate ? diaryEntries[activeDiaryDate] : undefined;
   const activeDiaryDayDefinition = activeDiaryDate ? dayDefinitions[activeDiaryDate] : undefined;
@@ -329,15 +368,11 @@ export const MainLayout = ({
           <CalendarListPopup
             calendars={calendarMetadata}
             visibleUrlSet={visibleCalendarUrlSet}
-            onToggle={handleToggleCalendarVisibility}
+            onToggle={toggleCalendarVisibility}
             onClose={() => setIsCalendarPopupOpen(false)}
-          // We use global context functions or local wrappers? 
-          // CalendarListPopup might need handlers for add/update/delete LOCAL calendar.
-          // Assuming they are handled internally or passed as needed.
-          // Checking previous code: onAddLocalCalendar, onUpdate, onDelete passed.
-          // We should implement them or assume they are not critical for now?
-          // Re-implementing them:
-          // They were simple state updates in App.tsx.
+            onAddLocalCalendar={addLocalCalendar}
+            onUpdateLocalCalendar={updateLocalCalendar}
+            onDeleteLocalCalendar={deleteLocalCalendar}
           />
         )}
       </>
@@ -403,7 +438,7 @@ export const MainLayout = ({
           onAddEvent={handleAddEventWrapper}
           onUpdateEvent={handleUpdateEventWrapper}
           onDeleteEvent={handleDeleteEventWrapper}
-          onDraftUpdate={setDraftEvent}
+          onDraftUpdate={handleDraftUpdateWrapper}
           onCloseRoutineModal={() => setIsRoutineModalOpen(false)}
           onAddRoutine={addRoutine}
           onDeleteRoutine={deleteRoutine}

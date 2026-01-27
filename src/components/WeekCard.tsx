@@ -4,6 +4,7 @@ import { Event, Routine, RoutineCompletion, Todo, WeekOrder } from '../types';
 import { RoutineIcon } from './RoutineIcon';
 import { TodoList } from './TodoList';
 import { Trash2 } from 'lucide-react';
+import { useSelection } from '../contexts/SelectionContext';
 import styles from './WeekCard.module.css';
 
 interface WeekCardProps {
@@ -63,6 +64,7 @@ export const WeekCard = memo(function WeekCard({
   showRoutines,
   showTodos,
 }: WeekCardProps) {
+  const { clearSelection } = useSelection();
   // Performance Monitoring
   if (process.env.NODE_ENV === 'development') {
     const dateStr = weekStart.toISOString().split('T')[0];
@@ -313,12 +315,14 @@ export const WeekCard = memo(function WeekCard({
 
               {/* 이벤트 영역 */}
               <div
+                id={`day-events-${dateStr}`}
                 className={styles.dayEvents}
                 onClick={(e) => {
                   // 이벤트 버블링 방지: 자식 요소(일정) 클릭 시에는 무시
                   if (e.target !== e.currentTarget && (e.target as HTMLElement).closest('[data-event-item]')) {
                     return;
                   }
+                  clearSelection();
                   // 빈 공간 클릭 동작 (필요 시 선택 해제 로직 등 추가 가능)
                 }}
                 onDoubleClick={(e) => {
