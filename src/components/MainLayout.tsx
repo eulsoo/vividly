@@ -8,7 +8,7 @@ import { useData } from '../contexts/DataContext';
 import { useSelection } from '../contexts/SelectionContext';
 import { useCalendarMetadata } from '../hooks/useCalendarMetadata';
 import { WeekOrder, Event, DiaryEntry, Todo } from '../types';
-import { normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry } from '../services/api';
+import { normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry, getUserAvatar } from '../services/api';
 import { getWeekStartForDate, getTodoWeekStart, formatLocalDate } from '../utils/dateUtils';
 import styles from '../App.module.css';
 
@@ -88,6 +88,19 @@ export const MainLayout = ({
   const prevScrollHeightRef = useRef(0);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
+
+  // --- Initial Avatar Load ---
+  useEffect(() => {
+    async function loadAvatar() {
+      if (session?.user) {
+        const url = await getUserAvatar();
+        if (url) {
+          setAvatarUrl(url);
+        }
+      }
+    }
+    loadAvatar();
+  }, [session]);
 
   // Handlers for AppHeader
   const scrollToToday = useCallback(() => {
