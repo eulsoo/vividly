@@ -1,6 +1,5 @@
 import { memo } from 'react';
 import { WeekCard } from './WeekCard';
-import { ObserverWrapper } from './ObserverWrapper';
 import { useData } from '../contexts/DataContext';
 import { Event, Todo, Routine, RoutineCompletion, WeekOrder } from '../types';
 import styles from '../App.module.css';
@@ -19,8 +18,6 @@ interface CalendarListProps {
   onDateClick: (date: string, anchorEl?: HTMLElement) => void;
   onEventDoubleClick: (event: Event, anchorEl?: HTMLElement) => void;
   onOpenDiary: (date: string) => void;
-  setCurrentYear: (year: number) => void;
-  setCurrentMonth: (month: number) => void;
   topSentinelRef: React.RefObject<HTMLDivElement>;
   bottomSentinelRef: React.RefObject<HTMLDivElement>;
 }
@@ -41,8 +38,6 @@ export const CalendarList = memo(({
   onDateClick,
   onEventDoubleClick,
   onOpenDiary,
-  setCurrentYear,
-  setCurrentMonth,
   topSentinelRef,
   bottomSentinelRef
 }: CalendarListProps) => {
@@ -62,40 +57,33 @@ export const CalendarList = memo(({
       <div ref={topSentinelRef} className={styles.appSentinel} />
       {weeksData.map(({ weekStart, weekStartStr, todoWeekStartStr, weekStatus }) => (
         <div key={weekStartStr} id={weekStatus === 'current' ? 'current-week' : undefined}>
-          <ObserverWrapper
-            onIntersect={() => {
-              setCurrentYear(weekStart.getFullYear());
-              setCurrentMonth(weekStart.getMonth() + 1);
-            }}
-          >
-            <WeekCard
-              weekStart={weekStart}
-              events={eventsByWeek[weekStartStr] || EMPTY_LIST}
-              routines={routines}
-              routineCompletions={routineCompletions}
-              todos={todosByWeek[todoWeekStartStr] || EMPTY_LIST}
-              dayDefinitions={dayDefinitions}
+          <WeekCard
+            weekStart={weekStart}
+            events={eventsByWeek[weekStartStr] || EMPTY_LIST}
+            routines={routines}
+            routineCompletions={routineCompletions}
+            todos={todosByWeek[todoWeekStartStr] || EMPTY_LIST}
+            dayDefinitions={dayDefinitions}
 
-              weekOrder={weekOrder}
-              onDateClick={onDateClick}
-              onEventDoubleClick={onEventDoubleClick}
+            weekOrder={weekOrder}
+            onDateClick={onDateClick}
+            onEventDoubleClick={onEventDoubleClick}
 
-              onDeleteEvent={deleteEvent}
-              onToggleRoutine={toggleRoutine}
-              onAddTodo={addTodo}
-              onToggleTodo={toggleTodo}
-              onUpdateTodo={updateTodo}
-              onDeleteTodo={deleteTodo}
-              onSaveDayDefinition={saveDayDefinition}
-              onDeleteDayDefinition={deleteDayDefinition}
+            onDeleteEvent={deleteEvent}
+            onToggleRoutine={toggleRoutine}
+            onAddTodo={addTodo}
+            onToggleTodo={toggleTodo}
+            onUpdateTodo={updateTodo}
+            onDeleteTodo={deleteTodo}
+            onSaveDayDefinition={saveDayDefinition}
+            onDeleteDayDefinition={deleteDayDefinition}
 
-              onOpenDiary={onOpenDiary}
-              diaryCompletions={diaryCompletionMap}
-              weekStatus={weekStatus}
-              showRoutines={showRoutines}
-              showTodos={showTodos}
-            />
-          </ObserverWrapper>
+            onOpenDiary={onOpenDiary}
+            diaryCompletions={diaryCompletionMap}
+            weekStatus={weekStatus}
+            showRoutines={showRoutines}
+            showTodos={showTodos}
+          />
         </div>
       ))}
       <div ref={bottomSentinelRef} className={styles.appSentinel} />

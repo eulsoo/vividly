@@ -280,6 +280,42 @@ export const MainLayout = ({
     }
   }, []);
 
+  // --- Scrolled Center Point Detection Logic ---
+  useEffect(() => {
+    let ticking = false;
+
+    const onScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          // Use Window Viewport Center
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
+
+          // Find element at viewport center
+          const el = document.elementFromPoint(centerX, centerY);
+          const weekEl = el?.closest('[data-week-id]'); // WeekCard has data-week-id="YYYY-MM-DD"
+
+          if (weekEl) {
+            const weekId = weekEl.getAttribute('data-week-id');
+            if (weekId) {
+              const [yStr, mStr] = weekId.split('-');
+              const year = parseInt(yStr, 10);
+              const month = parseInt(mStr, 10);
+
+              setCurrentYear(year);
+              setCurrentMonth(month);
+            }
+          }
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   const handleEventDoubleClick = useCallback((event: Event, anchorEl?: HTMLElement) => {
     setSelectedEvent(event);
     setSelectedDate(event.date);
@@ -412,8 +448,6 @@ export const MainLayout = ({
           onDateClick={handleDateClick}
           onEventDoubleClick={handleEventDoubleClick}
           onOpenDiary={handleOpenDiary}
-          setCurrentYear={setCurrentYear}
-          setCurrentMonth={setCurrentMonth}
           topSentinelRef={topSentinelRef}
           bottomSentinelRef={bottomSentinelRef}
         />
