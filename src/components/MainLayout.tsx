@@ -8,7 +8,8 @@ import { useData } from '../contexts/DataContext';
 import { useSelection } from '../contexts/SelectionContext';
 import { useCalendarMetadata } from '../hooks/useCalendarMetadata';
 import { WeekOrder, Event, DiaryEntry, Todo } from '../types';
-import { normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry, getUserAvatar } from '../services/api';
+import { normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry, getUserAvatar, getCalDAVSyncSettings } from '../services/api';
+import { createCalDavEvent, updateCalDavEvent, deleteCalDavEvent, CalDAVConfig } from '../services/caldav';
 import { getWeekStartForDate, getTodoWeekStart, formatLocalDate } from '../utils/dateUtils';
 import styles from '../App.module.css';
 
@@ -373,7 +374,49 @@ export const MainLayout = ({
   }, []);
 
   const handleAddEventWrapper = useCallback(async (event: Omit<Event, 'id'>, keepOpen?: boolean) => {
-    const newEvent = await addEvent(event);
+    let eventToSave = { ...event };
+
+    // 1. CalDAV Sync Check
+    try {
+      if (event.calendarUrl) {
+        const calMeta = calendarMetadata.find(c => normalizeCalendarUrl(c.url) === normalizeCalendarUrl(event.calendarUrl));
+        // Check if it's a CalDAV calendar (using type or implicit logic if type is missing but logic implies it)
+        // Currently we rely on 'type' field being set correctly.
+        // Or if it matches a subscribed CalDAV.
+
+        // Assuming 'type' is reliably set to 'caldav' for sync calendars
+        if (calMeta?.type === 'caldav') {
+          const settings = await getCalDAVSyncSettings();
+          if (settings) {
+            const config: CalDAVConfig = {
+              serverUrl: settings.serverUrl,
+              username: settings.username,
+              password: settings.password
+            };
+
+            // Generate UID if missing to ensure consistency between Local DB and CalDAV Server
+            if (!eventToSave.caldavUid) {
+              eventToSave.caldavUid = `vividly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            }
+
+            console.log('Syncing to CalDAV (Create)...', eventToSave.title);
+            const { success } = await createCalDavEvent(config, event.calendarUrl, eventToSave);
+
+            if (!success) {
+              console.error('CalDAV creation failed');
+              if (!confirm('외부 캘린더 동기화에 실패했습니다. 로컬에만 저장하시겠습니까?')) return;
+            } else {
+              eventToSave.source = 'caldav'; // Ensure source is marked
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('CalDAV Sync Error:', e);
+      if (!confirm('외부 캘린더 연동 오류가 발생했습니다. 로컬에만 저장하시겠습니까?')) return;
+    }
+
+    const newEvent = await addEvent(eventToSave);
     if (newEvent) {
       if (newEvent.calendarUrl) {
         setVisibleCalendarUrlSet(prev => {
@@ -393,22 +436,91 @@ export const MainLayout = ({
       // Type safe checking
       setDraftEvent(prev => (prev && prev.date === newEvent.date ? null : prev));
     }
-  }, [addEvent]);
+  }, [addEvent, calendarMetadata, setVisibleCalendarUrlSet]);
 
   const handleDeleteEventWrapper = useCallback(async (eventId: string) => {
+    // 1. Check if it's a CalDAV event
+    const eventToDelete = events.find(e => e.id === eventId);
+    if (eventToDelete?.calendarUrl && eventToDelete.caldavUid) { // Only try sync if we have UID and calendarUrl
+      const calMeta = calendarMetadata.find(c => normalizeCalendarUrl(c.url) === normalizeCalendarUrl(eventToDelete.calendarUrl));
+      if (calMeta?.type === 'caldav') {
+        try {
+          const settings = await getCalDAVSyncSettings();
+          if (settings) {
+            const config: CalDAVConfig = {
+              serverUrl: settings.serverUrl,
+              username: settings.username,
+              password: settings.password
+            };
+            console.log('Syncing to CalDAV (Delete)...', eventToDelete.title);
+            const { success } = await deleteCalDavEvent(config, eventToDelete.calendarUrl, eventToDelete.caldavUid);
+            if (!success) {
+              console.error('CalDAV deletion failed');
+              if (!confirm('외부 캘린더에서 삭제하지 못했습니다. 로컬에서만 삭제하시겠습니까?')) return;
+            }
+          }
+        } catch (e) {
+          console.error('CalDAV Delete Error:', e);
+          if (!confirm('외부 캘린더 연동 오류. 로컬에서만 삭제하시겠습니까?')) return;
+        }
+      }
+    }
+
     const success = await deleteEvent(eventId);
     if (success) {
       if (selectedEvent?.id === eventId) setSelectedEvent(null);
       removeIdFromSelection(eventId);
     }
-  }, [deleteEvent, selectedEvent, removeIdFromSelection]);
+  }, [deleteEvent, selectedEvent, removeIdFromSelection, events, calendarMetadata]);
 
   const handleUpdateEventWrapper = useCallback(async (eventId: string, updates: Partial<Event>) => {
+    // 1. Check if CalDAV sync needed
+    const oldEvent = events.find(e => e.id === eventId);
+
+    // Determine target calendar URL (might be updated or original)
+    const targetCalendarUrl = updates.calendarUrl || oldEvent?.calendarUrl;
+
+    if (oldEvent && targetCalendarUrl) {
+      const calMeta = calendarMetadata.find(c => normalizeCalendarUrl(c.url) === normalizeCalendarUrl(targetCalendarUrl));
+
+      if (calMeta?.type === 'caldav' && (oldEvent.caldavUid || updates.caldavUid)) {
+        try {
+          const settings = await getCalDAVSyncSettings();
+          if (settings) {
+            const config: CalDAVConfig = {
+              serverUrl: settings.serverUrl,
+              username: settings.username,
+              password: settings.password
+            };
+            const uid = updates.caldavUid || oldEvent.caldavUid!;
+            const mergedEvent = { ...oldEvent, ...updates };
+
+            console.log('Syncing to CalDAV (Update)...', mergedEvent.title);
+
+            // Note: if calendarUrl changed, we might need a Move (Delete Old + Create New) operation?
+            // CalDAV doesn't support "Moving" easily between calendar collections except via COPY/MOVE methods which are complex.
+            // For now, assume update within same calendar. Implementing Move is Phase 4.
+
+            const { success } = await updateCalDavEvent(config, targetCalendarUrl, uid, mergedEvent);
+
+            if (!success) {
+              console.error('CalDAV update failed');
+              // Warning only? Or block?
+              // alert('외부 캘린더 업데이트 실패'); 
+              // Continue to allow local update?
+            }
+          }
+        } catch (e) {
+          console.error('CalDAV Update Error:', e);
+        }
+      }
+    }
+
     await updateEvent(eventId, updates);
     if (selectedEvent?.id === eventId) {
       setSelectedEvent(prev => prev ? { ...prev, ...updates } : null);
     }
-  }, [updateEvent, selectedEvent]);
+  }, [updateEvent, selectedEvent, events, calendarMetadata]);
 
   const handleOpenDiary = useCallback(async (date: string) => {
     setActiveDiaryDate(date);

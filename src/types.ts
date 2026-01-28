@@ -8,6 +8,9 @@ export interface Event {
   endTime?: string;
   color: string;
   calendarUrl?: string;
+  caldavUid?: string;
+  source?: 'manual' | 'caldav';
+  isLocal?: boolean;
 }
 
 export interface Routine {

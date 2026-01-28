@@ -178,3 +178,50 @@ export async function fetchAndParseICS(url: string, rangeStart: Date, rangeEnd: 
     return [];
   }
 }
+
+/**
+ * Event 객체를 ICS 문자열로 변환 (CalDAV PUT 요청용)
+ */
+export function serializeEventToICS(event: Partial<Event>): string {
+  const comp = new ICAL.Component(['vcalendar', [], []]);
+  comp.updatePropertyWithValue('prodid', '-//Vividly App//KR');
+  comp.updatePropertyWithValue('version', '2.0');
+
+  const vevent = new ICAL.Component('vevent');
+  const icalEvent = new ICAL.Event(vevent);
+
+  icalEvent.summary = event.title || '새로운 일정';
+  icalEvent.description = event.memo || '';
+  // UID: 서버가 생성한 걸 써야 하지만, 최초 생성시는 클라이언트가 만들어 보내기도 함.
+  icalEvent.uid = event.caldavUid || `vividly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+  // 날짜/시간 설정
+  if (event.date) {
+    if (event.startTime && event.endTime) {
+      // 시간 지정 이벤트
+      const start = ICAL.Time.fromJSDate(new Date(`${event.date}T${event.startTime}`));
+      const end = ICAL.Time.fromJSDate(new Date(`${event.date}T${event.endTime}`));
+      icalEvent.startDate = start;
+      icalEvent.endDate = end;
+    } else {
+      // 종일 이벤트
+      const start = ICAL.Time.fromJSDate(new Date(event.date));
+      start.isDate = true;
+      icalEvent.startDate = start;
+       
+      // 종일 이벤트는 종료일이 다음날 자정이어야 함 (일반적인 컨벤션)
+      const nextDay = new Date(event.date);
+      nextDay.setDate(nextDay.getDate() + 1);
+      const end = ICAL.Time.fromJSDate(nextDay);
+      end.isDate = true;
+      icalEvent.endDate = end;
+    }
+  }
+
+  // DTSTAMP (Created/Modified Time to now)
+  const now = ICAL.Time.now();
+  vevent.updatePropertyWithValue('dtstamp', now);
+
+  comp.addSubcomponent(vevent);
+  return comp.toString();
+}

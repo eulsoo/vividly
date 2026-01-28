@@ -1,4 +1,76 @@
 import { Event } from '../types';
+import { serializeEventToICS } from './icsParser';
+
+// ... (functions)
+
+// ----------------------------------------------------------------------------
+// Write Operations (Create, Update, Delete)
+// ----------------------------------------------------------------------------
+
+export async function createCalDavEvent(
+  config: CalDAVConfig,
+  calendarUrl: string,
+  event: Partial<Event>
+): Promise<{ success: boolean; etag?: string }> {
+  const icsData = serializeEventToICS(event);
+  // serializeEventToICS generated a UID in event.caldavUid or we should ensure we get it.
+  // Actually serializeEventToICS returns string, so we need to know the UID it used.
+  // Better approach: generate UID here, assign to event, them serialize.
+  
+  // Re-generate UID if missing to be sure
+  const uid = event.caldavUid || `vividly-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const eventWithUid = { ...event, caldavUid: uid };
+  const finalIcs = serializeEventToICS(eventWithUid);
+
+  return await invokeCalDavProxy<{ success: boolean; etag?: string }>({
+    serverUrl: config.serverUrl,
+    username: config.username,
+    password: config.password,
+    action: 'createEvent',
+    calendarUrl,
+    eventUid: uid,
+    eventData: finalIcs
+  });
+}
+
+export async function updateCalDavEvent(
+  config: CalDAVConfig,
+  calendarUrl: string,
+  uid: string,
+  event: Partial<Event>,
+  etag?: string
+): Promise<{ success: boolean; etag?: string }> {
+  const eventWithUid = { ...event, caldavUid: uid };
+  const finalIcs = serializeEventToICS(eventWithUid);
+
+  return await invokeCalDavProxy<{ success: boolean; etag?: string }>({
+    serverUrl: config.serverUrl,
+    username: config.username,
+    password: config.password,
+    action: 'updateEvent',
+    calendarUrl,
+    eventUid: uid,
+    eventData: finalIcs,
+    etag // Send ETag for optimistic concurrency control (if supported)
+  });
+}
+
+export async function deleteCalDavEvent(
+  config: CalDAVConfig,
+  calendarUrl: string,
+  uid: string,
+  etag?: string
+): Promise<{ success: boolean }> {
+  return await invokeCalDavProxy<{ success: boolean }>({
+    serverUrl: config.serverUrl,
+    username: config.username,
+    password: config.password,
+    action: 'deleteEvent',
+    calendarUrl,
+    eventUid: uid,
+    etag
+  });
+}
 import { createEvent, eventExists, eventExistsByUID, deleteRemovedEvents, updateEventUID, updateEventByUID, fetchEventByUID, findEventByDetails } from './api';
 import { supabase, supabaseAnonKey } from '../lib/supabase';
 

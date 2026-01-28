@@ -16,11 +16,14 @@ interface CalDAVRequest {
   serverUrl: string;
   username: string;
   password: string;
-  action: 'listCalendars' | 'fetchEvents' | 'getSyncToken' | 'syncCollection';
+  action: 'listCalendars' | 'fetchEvents' | 'getSyncToken' | 'syncCollection' | 'createEvent' | 'updateEvent' | 'deleteEvent';
   calendarUrl?: string;
   startDate?: string;
   endDate?: string;
   syncToken?: string;
+  eventData?: string; // ICS content for PUT
+  eventUid?: string;  // Resource filename (e.g. uid.ics) for PUT/DELETE
+  etag?: string;      // For If-Match
 }
 
 interface Calendar {
@@ -165,6 +168,26 @@ Deno.serve(async (req) => {
         console.log('sync-collection 시작');
         result = await fetchSyncCollection(serverUrl, username, password, calendarUrl, requestData.syncToken);
         console.log('sync-collection 완료');
+      } else if (action === 'createEvent' || action === 'updateEvent') {
+        if (!calendarUrl || !requestData.eventData || !requestData.eventUid) {
+          return new Response(
+            JSON.stringify({ error: 'calendarUrl, eventData, eventUid가 필요합니다.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        console.log(`${action} 시작:`, requestData.eventUid);
+        result = await putEvent(serverUrl, username, password, calendarUrl, requestData.eventUid, requestData.eventData, requestData.etag);
+        console.log(`${action} 완료`);
+      } else if (action === 'deleteEvent') {
+        if (!calendarUrl || !requestData.eventUid) {
+           return new Response(
+            JSON.stringify({ error: 'calendarUrl, eventUid가 필요합니다.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        console.log('deleteEvent 시작:', requestData.eventUid);
+        result = await deleteEvent(serverUrl, username, password, calendarUrl, requestData.eventUid, requestData.etag); 
+        console.log('deleteEvent 완료');
       } else {
         return new Response(
           JSON.stringify({ error: '지원하지 않는 액션입니다.' }),
@@ -798,6 +821,99 @@ async function fetchEventsByHrefs(
       });
       if (!response.ok) continue;
       const icalText = await response.text();
+// ... existing code ...
+    } catch (error) {
+       console.error('fetchEventsByHrefs error:', error);
+    }
+  }
+  return events;
+}
+
+// ----------------------------------------------------------------------------
+// Create / Update Event (PUT)
+// ----------------------------------------------------------------------------
+async function putEvent(
+  serverUrl: string,
+  username: string,
+  password: string,
+  calendarUrl: string,
+  eventUid: string,
+  eventData: string,
+  etag?: string
+): Promise<{ success: boolean; etag?: string }> {
+  // Ensure calendarUrl ends with /
+  const base = calendarUrl.endsWith('/') ? calendarUrl : calendarUrl + '/';
+  // Filename usually is UID.ics
+  const filename = eventUid.endsWith('.ics') ? eventUid : `${eventUid}.ics`;
+  const url = `${base}${filename}`;
+  
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/calendar; charset=utf-8',
+    'Authorization': `Basic ${base64Encode(`${username}:${password}`)}`,
+    'User-Agent': 'Vividly/1.0',
+  };
+
+  if (etag) {
+    headers['If-Match'] = `"${etag}"`; // Some servers need quotes
+  }
+
+  console.log('PUT requesting:', url);
+
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers,
+    body: eventData,
+  });
+
+  if (!response.ok) {
+     const text = await response.text();
+     console.error('PUT failed:', response.status, text);
+     throw new Error(`PUT request failed: ${response.status} ${response.statusText}`);
+  }
+
+  const newEtag = response.headers.get('ETag');
+  return { success: true, etag: newEtag ? newEtag.replace(/"/g, '') : undefined };
+}
+
+// ----------------------------------------------------------------------------
+// Delete Event (DELETE)
+// ----------------------------------------------------------------------------
+async function deleteEvent(
+  serverUrl: string,
+  username: string,
+  password: string,
+  calendarUrl: string,
+  eventUid: string,
+  etag?: string
+): Promise<{ success: boolean }> {
+  const base = calendarUrl.endsWith('/') ? calendarUrl : calendarUrl + '/';
+  const filename = eventUid.endsWith('.ics') ? eventUid : `${eventUid}.ics`;
+  const url = `${base}${filename}`;
+
+  const headers: Record<string, string> = {
+    'Authorization': `Basic ${base64Encode(`${username}:${password}`)}`,
+    'User-Agent': 'Vividly/1.0',
+  };
+
+  if (etag) {
+    headers['If-Match'] = `"${etag}"`;
+  }
+
+  console.log('DELETE requesting:', url);
+
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers,
+  });
+
+  if (!response.ok && response.status !== 404) { // 404 is technically success (already gone)
+     const text = await response.text();
+     console.error('DELETE failed:', response.status, text);
+     throw new Error(`DELETE request failed: ${response.status}`);
+  }
+
+  return { success: true };
+}
       const parsed = parseEventsFromICalText(icalText, defaultColor);
       if (parsed.length > 0) {
         events.push(...parsed);
