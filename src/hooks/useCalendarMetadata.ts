@@ -35,7 +35,9 @@ export const useCalendarMetadata = () => {
                 displayName: '대한민국 공휴일(Apple)',
                 color: '#EF4444',
                 isVisible: true,
-                isLocal: false
+                isLocal: false,
+                type: 'subscription',
+                subscriptionUrl: HOLIDAY_CAL_URL
             };
             metaList.push(holidayMeta);
             visible.add(normalizedHolidayUrl);
@@ -101,11 +103,18 @@ export const useCalendarMetadata = () => {
     });
   }, []);
 
-  const deleteLocalCalendar = useCallback((url: string) => {
+  const deleteCalendar = useCallback((url: string) => {
     setCalendarMetadata(prev => {
       const next = prev.filter(c => c.url !== url);
+      // Save both stores (functions handle filtering internally)
       saveLocalCalendarMetadata(next);
+      saveCalendarMetadata(next);
       return next;
+    });
+    setVisibleCalendarUrlSet(prev => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
     });
   }, []);
 
@@ -116,6 +125,6 @@ export const useCalendarMetadata = () => {
     toggleCalendarVisibility,
     addLocalCalendar,
     updateLocalCalendar,
-    deleteLocalCalendar,
+    deleteCalendar,
   };
 };

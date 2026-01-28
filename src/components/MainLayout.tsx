@@ -57,7 +57,7 @@ export const MainLayout = ({
     toggleCalendarVisibility,
     addLocalCalendar,
     updateLocalCalendar,
-    deleteLocalCalendar
+    deleteCalendar
   } = useCalendarMetadata();
 
   // --- UI States ---
@@ -448,6 +448,21 @@ export const MainLayout = ({
     // But user request was "deselect" which usually refers to the highlighted selection.
   }, [selectedEventIds, clearSelection]);
 
+  const handleDeleteCalendar = useCallback(async (url: string) => {
+    deleteCalendar(url);
+
+    const normalizedUrl = normalizeCalendarUrl(url);
+    if (normalizedUrl) {
+      const { error } = await supabase.from('events').delete().eq('calendar_url', normalizedUrl);
+      if (error) console.error('Failed to delete events for calendar', url, error);
+
+      // Reset holiday sync flag if it's the holiday calendar
+      if (url.includes('holidays/kr_ko.ics')) {
+        localStorage.removeItem('holiday_synced_v2');
+      }
+    }
+  }, [deleteCalendar]);
+
   return (
     <div className={styles.appLayout}>
       <>
@@ -460,7 +475,7 @@ export const MainLayout = ({
             onClose={() => setIsCalendarPopupOpen(false)}
             onAddLocalCalendar={addLocalCalendar}
             onUpdateLocalCalendar={updateLocalCalendar}
-            onDeleteLocalCalendar={deleteLocalCalendar}
+            onDeleteCalendar={handleDeleteCalendar}
           />
         )}
       </>

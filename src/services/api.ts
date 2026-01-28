@@ -16,6 +16,8 @@ export interface CalendarMetadata {
   color: string;
   isLocal?: boolean;
   isVisible?: boolean;
+  type?: 'local' | 'subscription' | 'caldav';
+  subscriptionUrl?: string;
 }
 
 // CalDAV 메타데이터 저장 (로컬 캘린더 제외)

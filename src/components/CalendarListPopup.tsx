@@ -4,15 +4,14 @@ import { HexColorPicker } from 'react-colorful';
 import { CalendarMetadata } from '../services/api';
 import styles from './CalendarListPopup.module.css';
 
-interface CalendarListPopupProps {
+export interface CalendarListPopupProps {
   calendars: CalendarMetadata[];
   visibleUrlSet: Set<string>;
   onToggle: (url: string) => void;
   onClose: () => void;
-  onOpenSyncSettings?: () => void;
   onAddLocalCalendar?: (name: string, color: string) => string; // returns url
   onUpdateLocalCalendar?: (url: string, updates: Partial<CalendarMetadata>) => void;
-  onDeleteLocalCalendar?: (url: string) => void;
+  onDeleteCalendar?: (url: string) => void;
 }
 
 const PRESET_COLORS = [
@@ -30,10 +29,9 @@ export function CalendarListPopup({
   visibleUrlSet,
   onToggle,
   onClose,
-  onOpenSyncSettings,
   onAddLocalCalendar,
   onUpdateLocalCalendar,
-  onDeleteLocalCalendar,
+  onDeleteCalendar,
 }: CalendarListPopupProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; calendarUrl: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -62,11 +60,10 @@ export function CalendarListPopup({
   }, [editingId]);
 
   const handleContextMenu = (e: React.MouseEvent, cal: CalendarMetadata) => {
-    if (!cal.isLocal) return; // 로컬 캘린더만 메뉴 허용
     e.preventDefault();
-    setSelectedId(cal.url); // 우클릭 시 선택 상태로 변경
+    setSelectedId(cal.url);
     setContextMenu({ x: e.clientX, y: e.clientY, calendarUrl: cal.url });
-    setShowColorPicker(false); // Reset picker on new open
+    setShowColorPicker(false);
   };
 
   const handleAddClick = () => {
@@ -94,9 +91,8 @@ export function CalendarListPopup({
   };
 
   const handleDelete = () => {
-    if (contextMenu && onDeleteLocalCalendar) {
-      // confirm 제거: 사용자 피드백 반영 (삭제가 안된다고 하여 바로 삭제 시도)
-      onDeleteLocalCalendar(contextMenu.calendarUrl);
+    if (contextMenu && onDeleteCalendar) {
+      onDeleteCalendar(contextMenu.calendarUrl);
       setContextMenu(null);
     }
   };
@@ -111,6 +107,68 @@ export function CalendarListPopup({
     }
   };
 
+  const localCalendars = calendars.filter(c => c.isLocal || c.type === 'local');
+  const subCalendars = calendars.filter(c => !c.isLocal && c.type !== 'local');
+
+  const getCalendarItem = (cal: CalendarMetadata) => {
+    const isVisible = visibleUrlSet.has(cal.url);
+    const isEditing = editingId === cal.url;
+    const isSelected = selectedId === cal.url;
+
+    return (
+      <div
+        key={cal.url}
+        className={styles.calendarItem}
+        style={{ backgroundColor: isSelected ? 'rgba(0, 0, 0, 0.05)' : undefined }}
+        onContextMenu={(e) => handleContextMenu(e, cal)}
+        onClick={() => {
+          if (isSelected && cal.isLocal && !isEditing) {
+            setEditingId(cal.url);
+            setEditingName(cal.displayName);
+            return;
+          }
+          setSelectedId(cal.url);
+        }}
+      >
+        <input
+          type="checkbox"
+          className={styles.checkbox}
+          style={{ '--cal-color': cal.color } as React.CSSProperties}
+          checked={isVisible}
+          onChange={() => onToggle(cal.url)}
+          onClick={(e) => e.stopPropagation()}
+        />
+
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              className={styles.calendarNameInput}
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              onBlur={handleNameSave}
+              onKeyDown={handleKeyDown}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <span className={styles.calendarName}
+              style={{ userSelect: 'none' }}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (cal.isLocal) {
+                  setEditingId(cal.url);
+                  setEditingName(cal.displayName);
+                }
+              }}
+            >
+              {cal.displayName}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
       <div className={styles.popupContainer}>
@@ -122,89 +180,34 @@ export function CalendarListPopup({
         </div>
 
         {calendars.length === 0 ? (
-          <div style={{ padding: '1rem 0', fontSize: '0.85rem', color: '#666', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-            동기화된 캘린더가 없습니다.
-            {onOpenSyncSettings && (
-              <button
-                onClick={() => { onClose(); onOpenSyncSettings(); }}
-                style={{
-                  padding: '0.4rem 0.8rem',
-                  fontSize: '0.8rem',
-                  color: '#2563eb',
-                  background: '#eff6ff',
-                  border: '1px solid #bfdbfe',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  fontWeight: 500
-                }}
-              >
-                동기화 설정하기
-              </button>
-            )}
+          <div style={{ padding: '1rem 0', fontSize: '0.85rem', color: '#666', textAlign: 'center' }}>
+            표시할 캘린더가 없습니다.
           </div>
         ) : (
           <div className={styles.calendarList}>
-            {calendars.map((cal) => {
-              const isVisible = visibleUrlSet.has(cal.url);
-              const isEditing = editingId === cal.url;
-              const isSelected = selectedId === cal.url;
+            {/* Local Calendars */}
+            {localCalendars.length > 0 && localCalendars.map(getCalendarItem)}
 
-              return (
-                <div
-                  key={cal.url}
-                  className={styles.calendarItem}
-                  style={{ backgroundColor: isSelected ? 'rgba(0, 0, 0, 0.05)' : undefined }}
-                  onContextMenu={(e) => handleContextMenu(e, cal)}
-                  onClick={() => {
-                    // 이미 선택된 로컬 캘린더를 다시 클릭하면 이름 수정 모드 진입
-                    if (isSelected && cal.isLocal && !isEditing) {
-                      setEditingId(cal.url);
-                      setEditingName(cal.displayName);
-                      return;
-                    }
+            {/* Divider if both exist */}
+            {localCalendars.length > 0 && subCalendars.length > 0 && (
+              <div style={{ margin: '0.5rem 0 0.25rem', borderTop: '1px solid #f3f4f6' }} />
+            )}
 
-                    // 모든 캘린더 선택 가능
-                    setSelectedId(cal.url);
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    className={styles.checkbox}
-                    style={{ '--cal-color': cal.color } as React.CSSProperties}
-                    checked={isVisible}
-                    onChange={() => onToggle(cal.url)}
-                    onClick={(e) => e.stopPropagation()} // 체크박스 클릭 시 선택 이벤트 방지
-                  />
+            {/* Subscribed Calendars Header */}
+            {subCalendars.length > 0 && (
+              <div style={{
+                padding: '0.5rem 0.5rem 0.25rem',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: '#9ca3af',
+                textTransform: 'uppercase'
+              }}>
+                구독 캘린더
+              </div>
+            )}
 
-                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    {isEditing ? (
-                      <input
-                        ref={inputRef}
-                        className={styles.calendarNameInput}
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onBlur={handleNameSave}
-                        onKeyDown={handleKeyDown}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                    ) : (
-                      <span className={styles.calendarName}
-                        style={{ userSelect: 'none' }}
-                        onDoubleClick={(e) => {
-                          e.stopPropagation(); // 선택 이벤트 방지
-                          if (cal.isLocal) {
-                            setEditingId(cal.url);
-                            setEditingName(cal.displayName);
-                          }
-                        }}
-                      >
-                        {cal.displayName}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+            {/* Subscribed Calendars */}
+            {subCalendars.map(getCalendarItem)}
           </div>
         )}
 
@@ -250,7 +253,11 @@ export function CalendarListPopup({
 
               <button className={`${styles.contextMenuItem} delete`} onClick={handleDelete}>
                 <Trash2 size={14} />
-                <span>삭제</span>
+                <span>
+                  {(calendars.find(c => c.url === contextMenu.calendarUrl)?.isLocal)
+                    ? '삭제'
+                    : '구독 취소'}
+                </span>
               </button>
             </>
           ) : (
