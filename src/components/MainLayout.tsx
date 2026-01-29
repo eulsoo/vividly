@@ -9,7 +9,7 @@ import { useSelection } from '../contexts/SelectionContext';
 import { useCalendarMetadata } from '../hooks/useCalendarMetadata';
 import { WeekOrder, Event, DiaryEntry, Todo } from '../types';
 import { normalizeCalendarUrl, CalendarMetadata, upsertDiaryEntry, getUserAvatar, getCalDAVSyncSettings } from '../services/api';
-import { createCalDavEvent, updateCalDavEvent, deleteCalDavEvent, CalDAVConfig } from '../services/caldav';
+import { createCalDavEvent, updateCalDavEvent, deleteCalDavEvent, syncSelectedCalendars, CalDAVConfig } from '../services/caldav';
 import { getWeekStartForDate, getTodoWeekStart, formatLocalDate } from '../utils/dateUtils';
 import styles from '../App.module.css';
 
@@ -45,6 +45,7 @@ export const MainLayout = ({
     addTodo, toggleTodo, updateTodo, deleteTodo,
     saveDayDefinition, deleteDayDefinition,
     fetchDiary, saveDiary, deleteDiary,
+    loadData // Add loadData for auto-sync refresh
   } = useData();
 
   const {
@@ -60,6 +61,56 @@ export const MainLayout = ({
     updateLocalCalendar,
     deleteCalendar
   } = useCalendarMetadata();
+
+  // --- Auto CalDAV Sync ---
+  useEffect(() => {
+    let mounted = true;
+    const autoSync = async () => {
+      const settings = await getCalDAVSyncSettings();
+      if (!settings || !mounted) return;
+
+      if (calendarMetadata.length === 0) return;
+
+      const caldavCalendars = calendarMetadata.filter(c =>
+        c.type === 'caldav' ||
+        (c.url && (c.url.includes('caldav') || c.url.includes('icloud')))
+      );
+
+      if (caldavCalendars.length === 0) return;
+
+      console.log('Starting auto-sync...');
+      const config: CalDAVConfig = {
+        serverUrl: settings.serverUrl,
+        username: settings.username,
+        password: settings.password,
+        settingId: settings.id
+      };
+
+      // Auto-sync usually shouldn't show progress, so no callback
+      // Fix: syncSelectedCalendars takes (config, urls)
+      const caldavUrls = caldavCalendars.map(c => c.url);
+      const count = await syncSelectedCalendars(config, caldavUrls);
+
+      if (count !== 0 && mounted) {
+        console.log(`Auto-sync updated/deleted events. Reloading data...`);
+        loadData(true); // Force reload
+      }
+    };
+
+    // Initial sync after 2s
+    const timer = setTimeout(() => {
+      autoSync();
+    }, 2000);
+
+    // Periodic sync every 5 min
+    const interval = setInterval(autoSync, 5 * 60 * 1000);
+
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
+  }, [calendarMetadata, loadData]);
 
   // --- UI States ---
   const [isCalendarPopupOpen, setIsCalendarPopupOpen] = useState(false);
@@ -483,31 +534,27 @@ export const MainLayout = ({
     if (oldEvent && targetCalendarUrl) {
       const calMeta = calendarMetadata.find(c => normalizeCalendarUrl(c.url) === normalizeCalendarUrl(targetCalendarUrl));
 
-      if (calMeta?.type === 'caldav' && (oldEvent.caldavUid || updates.caldavUid)) {
+      const isCalDavCalendar = calMeta?.type === 'caldav'
+        || (targetCalendarUrl && (targetCalendarUrl.includes('caldav') || targetCalendarUrl.includes('icloud')));
+
+      if (isCalDavCalendar && (oldEvent.caldavUid || updates.caldavUid)) {
         try {
           const settings = await getCalDAVSyncSettings();
+
           if (settings) {
             const config: CalDAVConfig = {
               serverUrl: settings.serverUrl,
               username: settings.username,
-              password: settings.password
+              password: settings.password,
+              settingId: settings.id
             };
             const uid = updates.caldavUid || oldEvent.caldavUid!;
             const mergedEvent = { ...oldEvent, ...updates };
-
-            console.log('Syncing to CalDAV (Update)...', mergedEvent.title);
-
-            // Note: if calendarUrl changed, we might need a Move (Delete Old + Create New) operation?
-            // CalDAV doesn't support "Moving" easily between calendar collections except via COPY/MOVE methods which are complex.
-            // For now, assume update within same calendar. Implementing Move is Phase 4.
 
             const { success } = await updateCalDavEvent(config, targetCalendarUrl, uid, mergedEvent);
 
             if (!success) {
               console.error('CalDAV update failed');
-              // Warning only? Or block?
-              // alert('외부 캘린더 업데이트 실패'); 
-              // Continue to allow local update?
             }
           }
         } catch (e) {

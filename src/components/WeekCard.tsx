@@ -66,10 +66,7 @@ export const WeekCard = memo(function WeekCard({
 }: WeekCardProps) {
   const { clearSelection, setHoveredDate } = useSelection();
   // Performance Monitoring
-  if (process.env.NODE_ENV === 'development') {
-    const dateStr = weekStart.toISOString().split('T')[0];
-    console.log(`[Render] WeekCard ${dateStr} Re-rendered`);
-  }
+
   const [draftDefinitions, setDraftDefinitions] = useState<Record<string, string>>({});
   const [activeDefinitionDate, setActiveDefinitionDate] = useState<string | null>(null);
   const dayDefinitionInputRefs = useRef<Record<string, HTMLInputElement | null>>({});

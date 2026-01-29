@@ -74,7 +74,7 @@ export async function deleteCalDavEvent(
     settingId: config.settingId
   });
 }
-import { createEvent, eventExists, eventExistsByUID, deleteRemovedEvents, updateEventUID, updateEventByUID, fetchEventByUID, findEventByDetails } from './api';
+import { createEvent, eventExists, eventExistsByUID, deleteRemovedEvents, updateEventUID, updateEventByUID, fetchEventByUID, findEventByDetails, upsertEvent } from './api';
 import { supabase, supabaseAnonKey } from '../lib/supabase';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
@@ -517,7 +517,7 @@ export async function syncSelectedCalendars(
             // 새 이벤트 생성
             // event에서 uid 필드 제거 (caldavUid로 전달)
             const { uid: _uid, ...eventWithoutUid } = event as any;
-            const result = await createEvent({
+            const result = await upsertEvent({
               ...eventWithoutUid,
               caldavUid: uid,
               calendarUrl,

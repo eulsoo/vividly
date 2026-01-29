@@ -948,16 +948,7 @@ async function deleteEvent(
 
   return { success: true };
 }
-      const parsed = parseEventsFromICalText(icalText, defaultColor);
-      if (parsed.length > 0) {
-        events.push(...parsed);
-      }
-    } catch (error) {
-      console.error('이벤트 href 가져오기 실패:', error);
-    }
-  }
-  return events;
-}
+
 
 function parseEventsFromICalText(icalText: string, defaultColor: string): Omit<Event, 'id'>[] {
   const events: Omit<Event, 'id'>[] = [];

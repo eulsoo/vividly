@@ -148,6 +148,7 @@ export const fetchEvents = async (startDate?: string, endDate?: string) => {
     startTime: event.start_time,
     endTime: event.end_time,
     calendarUrl: normalizeCalendarUrl(event.calendar_url), // calendar_url 매핑 추가
+    caldavUid: event.caldav_uid, // caldav_uid 매핑 추가
   }));
 };
 
@@ -189,6 +190,46 @@ export const createEvent = async (event: Omit<Event, 'id'> & { uid?: string; cal
 
   if (error) {
     console.error('Error creating event:', error);
+    return null;
+  }
+  return {
+    ...data,
+    startTime: data.start_time,
+    endTime: data.end_time,
+    calendarUrl: data.calendar_url,
+  };
+};
+
+// CalDAV 동기화용 Upsert (없으면 생성, 있으면 업데이트)
+export const upsertEvent = async (event: Omit<Event, 'id'> & { uid?: string; caldavUid?: string; calendarUrl?: string; source?: string }) => {
+  const { startTime, endTime, uid, caldavUid, calendarUrl, source, ...rest } = event;
+  
+  const cleanRest: any = { ...rest };
+  delete cleanRest.uid;
+  delete cleanRest.caldavUid;
+  
+  const normalizedCalendarUrl = normalizeCalendarUrl(calendarUrl || undefined);
+
+  const payload: any = {
+    ...cleanRest,
+    start_time: startTime,
+    end_time: endTime,
+    source: source || 'caldav',
+  };
+  
+  const eventUid = uid || caldavUid;
+  if (eventUid) payload.caldav_uid = eventUid;
+  if (normalizedCalendarUrl) payload.calendar_url = normalizedCalendarUrl;
+  if (event.etag) payload.etag = event.etag;
+
+  const { data, error } = await supabase
+    .from('events')
+    .upsert(payload, { onConflict: 'caldav_uid,calendar_url' })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error upserting event:', error);
     return null;
   }
   return {

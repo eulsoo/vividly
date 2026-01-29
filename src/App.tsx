@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import { Login } from './components/Login';
@@ -37,6 +37,12 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleGetWeekStartForDate = useCallback((date: Date) => getWeekStartForDate(date, weekOrder), [weekOrder]);
+  const handleGetCurrentTodoWeekStart = useCallback(() => {
+    const currentWeekStart = getWeekStartForDate(new Date(), weekOrder);
+    return getTodoWeekStart(currentWeekStart, weekOrder);
+  }, [weekOrder]);
+
   return (
     <div className={styles.appContainer}>
       {sessionLoading ? null : !session ? (
@@ -48,11 +54,8 @@ export default function App() {
             weekOrder={weekOrder}
             pastWeeks={pastWeeks}
             futureWeeks={futureWeeks}
-            getWeekStartForDate={(date) => getWeekStartForDate(date, weekOrder)}
-            getCurrentTodoWeekStart={() => {
-              const currentWeekStart = getWeekStartForDate(new Date(), weekOrder);
-              return getTodoWeekStart(currentWeekStart, weekOrder);
-            }}
+            getWeekStartForDate={handleGetWeekStartForDate}
+            getCurrentTodoWeekStart={handleGetCurrentTodoWeekStart}
             formatLocalDate={formatLocalDate}
           >
             <MainLayout
