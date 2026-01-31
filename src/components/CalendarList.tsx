@@ -61,6 +61,7 @@ export const CalendarList = memo(({
         <div key={weekStartStr} id={weekStatus === 'current' ? 'current-week' : undefined}>
           <WeekCard
             weekStart={weekStart}
+            todoWeekStart={todoWeekStartStr}
             events={eventsByWeek[weekStartStr] || EMPTY_LIST}
             routines={routines}
             routineCompletions={routineCompletions}

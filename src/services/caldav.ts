@@ -1,4 +1,4 @@
-import { Event } from '../types';
+ import { Event } from '../types';
 import { serializeEventToICS } from './icsParser';
 
 // ----------------------------------------------------------------------------

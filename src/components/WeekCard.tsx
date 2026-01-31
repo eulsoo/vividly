@@ -9,6 +9,7 @@ import styles from './WeekCard.module.css';
 
 interface WeekCardProps {
   weekStart: Date;
+  todoWeekStart: string; // Key for todo lookup (may differ from weekStart for sun-start weeks)
   events: Event[];
   routines: Routine[];
   routineCompletions: RoutineCompletion[];
@@ -42,6 +43,7 @@ const DIARY_ROUTINE: Routine = {
 
 export const WeekCard = memo(function WeekCard({
   weekStart,
+  todoWeekStart,
   events,
   routines,
   routineCompletions,
@@ -386,7 +388,7 @@ export const WeekCard = memo(function WeekCard({
         return (
           <TodoList
             todos={todos}
-            onAdd={(text) => onAddTodo(weekId, text)}
+            onAdd={(text) => onAddTodo(todoWeekStart, text)}
             onToggle={onToggleTodo}
             onUpdate={onUpdateTodo}
             onDelete={onDeleteTodo}
